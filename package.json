@@ -1,0 +1,28 @@
+{
+  "name": "claude-agent-factory",
+  "version": "1.0.0",
+  "description": "Dynamically create and run Claude agents based on requirements",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "dev:server": "cd ui && npm run build && cd .. && tsx src/server.ts",
+    "dev:ui": "cd ui && npm run dev",
+    "dev:full": "concurrently \"npm run dev:ui\" \"tsx src/server.ts\""
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "@anthropic-ai/sdk": "latest",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "concurrently": "^8.2.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
