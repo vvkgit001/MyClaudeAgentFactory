@@ -12,12 +12,13 @@
 import express from "express";
 import cors from "cors";
 import { spawn } from "child_process";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes, createHash } from "crypto";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { Request, Response } from "express";
 
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIST = join(__dirname, "..", "ui", "dist");
@@ -254,6 +255,156 @@ app.post("/api/jobs/:jobId/message", (req: Request, res: Response) => {
   }
 
   res.json({ ok: true });
+});
+
+// ─── Atlassian OAuth ──────────────────────────────────────────────────────────
+
+const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
+const ATLASSIAN_MCP_URL = "https://mcp.atlassian.com/v1/mcp";
+const ATLASSIAN_AUTH_ENDPOINT = "https://mcp.atlassian.com/v1/authorize";
+const ATLASSIAN_TOKEN_ENDPOINT = "https://cf.mcp.atlassian.com/v1/token";
+const ATLASSIAN_REGISTER_ENDPOINT = "https://cf.mcp.atlassian.com/v1/register";
+const ATLASSIAN_REDIRECT_URI = "http://localhost:3001/api/atlassian/callback";
+
+interface PkceState {
+  clientId: string;
+  codeVerifier: string;
+  state: string;
+}
+let pendingAtlassianPkce: PkceState | null = null;
+
+function readCredentials(): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(CREDENTIALS_PATH, "utf-8")) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+app.get("/api/atlassian/status", (_req: Request, res: Response) => {
+  const creds = readCredentials();
+  const mcpOAuth = (creds.mcpOAuth ?? {}) as Record<string, { serverName: string; accessToken: string; expiresAt: number }>;
+  const entry = Object.values(mcpOAuth).find((v) => v.serverName === "atlassian");
+  if (entry?.accessToken && entry.expiresAt > Date.now()) {
+    res.json({ authenticated: true });
+  } else {
+    res.json({ authenticated: false });
+  }
+});
+
+app.get("/api/atlassian/auth-url", async (_req: Request, res: Response) => {
+  try {
+    const regRes = await fetch(ATLASSIAN_REGISTER_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redirect_uris: [ATLASSIAN_REDIRECT_URI],
+        client_name: "User Story Creator",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+        code_challenge_method: "S256",
+      }),
+    });
+    const client = await regRes.json() as { client_id: string };
+
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
+    const state = randomBytes(16).toString("hex");
+
+    pendingAtlassianPkce = { clientId: client.client_id, codeVerifier, state };
+
+    const authUrl = new URL(ATLASSIAN_AUTH_ENDPOINT);
+    authUrl.searchParams.set("client_id", client.client_id);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("redirect_uri", ATLASSIAN_REDIRECT_URI);
+    authUrl.searchParams.set("code_challenge", codeChallenge);
+    authUrl.searchParams.set("code_challenge_method", "S256");
+    authUrl.searchParams.set("state", state);
+
+    res.json({ url: authUrl.toString() });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+app.get("/api/atlassian/callback", async (req: Request, res: Response) => {
+  const { code, state } = req.query as { code?: string; state?: string };
+
+  if (!code || !pendingAtlassianPkce || state !== pendingAtlassianPkce.state) {
+    res.status(400).send("Invalid or expired OAuth callback.");
+    return;
+  }
+
+  try {
+    const tokenRes = await fetch(ATLASSIAN_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: ATLASSIAN_REDIRECT_URI,
+        client_id: pendingAtlassianPkce.clientId,
+        code_verifier: pendingAtlassianPkce.codeVerifier,
+      }),
+    });
+    const token = await tokenRes.json() as {
+      access_token: string;
+      expires_in?: number;
+      refresh_token?: string;
+    };
+
+    const creds = readCredentials();
+    const mcpOAuth = (creds.mcpOAuth ?? {}) as Record<string, unknown>;
+    const existingKey = Object.keys(mcpOAuth).find(
+      (k) => (mcpOAuth[k] as { serverName: string }).serverName === "atlassian"
+    );
+    const key = existingKey ?? `atlassian|${randomBytes(8).toString("hex")}`;
+
+    mcpOAuth[key] = {
+      ...(mcpOAuth[key] as object ?? {}),
+      serverName: "atlassian",
+      serverUrl: ATLASSIAN_MCP_URL,
+      clientId: pendingAtlassianPkce.clientId,
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token ?? "",
+      expiresAt: token.expires_in ? Date.now() + token.expires_in * 1000 : Date.now() + 3_600_000,
+      discoveryState: { authorizationServerUrl: "https://mcp.atlassian.com/", oauthMetadataFound: true },
+    };
+    creds.mcpOAuth = mcpOAuth;
+
+    writeFileSync(CREDENTIALS_PATH, JSON.stringify(creds, null, 2));
+
+    // Clear the needs-auth cache
+    try {
+      const cachePath = join(homedir(), ".claude", "mcp-needs-auth-cache.json");
+      const cache = JSON.parse(readFileSync(cachePath, "utf-8")) as Record<string, unknown>;
+      delete cache.atlassian;
+      writeFileSync(cachePath, JSON.stringify(cache));
+    } catch { /* ignore */ }
+
+    pendingAtlassianPkce = null;
+
+    res.send(`<!DOCTYPE html>
+<html>
+<head><title>Authorized</title>
+<style>body{font-family:system-ui,sans-serif;background:#0d1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}</style>
+</head>
+<body>
+  <div style="text-align:center">
+    <div style="font-size:56px;margin-bottom:16px">✓</div>
+    <h2 style="margin:0 0 8px">Atlassian Authorized</h2>
+    <p style="color:#64748b">You can close this window.</p>
+    <script>
+      if(window.opener){window.opener.postMessage({type:'atlassian-auth-success'},'*');}
+      setTimeout(()=>window.close(),2000);
+    </script>
+  </div>
+</body>
+</html>`);
+  } catch (err) {
+    res.status(500).send(`Token exchange failed: ${String(err)}`);
+  }
 });
 
 // ─── GET /api/health ─────────────────────────────────────────────────────────
