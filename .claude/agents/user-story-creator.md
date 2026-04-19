@@ -264,6 +264,27 @@ ORDERING RULE:
     2. Core happy-path flows
     3. Error, edge, and non-functional stories
 
+STORY POINT ESTIMATION RULE:
+  For EVERY story, estimate story points using these four factors
+  (scale: 1 / 2 / 3 / 5 / 8 Fibonacci — min 1, max 8):
+
+  | Factor            | Low                                      | Medium                              | High                                      |
+  |-------------------|------------------------------------------|-------------------------------------|-------------------------------------------|
+  | Dev effort        | < 0.5 day                                | 0.5–2 days                          | 2–5 days                                  |
+  | Complexity        | 1 layer (UI only or API only)            | 2 layers (UI+API or API+DB)         | 3+ layers or external integrations        |
+  | Risk/uncertainty  | Well-understood, has precedent           | Some unknowns or exploratory areas  | Novel approach, TBD dependencies, no art  |
+  | AC count          | 1–2 ACs                                  | 3–4 ACs                             | 5+ ACs                                    |
+
+  MAPPING TO FIBONACCI:
+    • All Low                               → 1
+    • Mostly Low, one Medium               → 2
+    • Mix of Low / Medium                  → 3
+    • At least one High, rest Medium       → 5
+    • Multiple Highs or very large scope   → 8 (flag for splitting)
+
+  RATIONALE FORMAT (always include — one line):
+    Example: "3 — medium complexity (UI + REST API), 3 ACs, low risk"
+
 </story_generation_rules>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -328,6 +349,14 @@ AC-3: [Label — e.g., Empty State]
 
 [Minimum 3 ACs per story. Include at least:
  1 happy path, 1 error/edge case, 1 boundary condition]
+
+─────────────────────────────────
+STORY POINTS:
+─────────────────────────────────
+[Points] — [One-line rationale citing the dominant factors:
+            dev effort, complexity, risk/uncertainty, AC count]
+
+Example: "3 — medium complexity (UI + REST API), 3 ACs, low risk"
 
 ─────────────────────────────────
 DEFINITION OF DONE:
@@ -464,7 +493,7 @@ EDIT HANDLING:
    1. User Story statement
    2. Acceptance Criteria
    3. Definition of Done
-   4. Priority or Estimate
+   4. Story Points (current estimate can be overridden)
    5. Persona
    6. Something else — describe it"
   
@@ -489,6 +518,7 @@ FOR EACH APPROVED STORY, create a Jira issue with:
   - Priority:       [From story template]
   - Labels:         ["AI-Generated", "Needs-PO-Review", 
                      "Ready-for-Dev" (if DoR passed)]
+  - Story Points:   [Number from STORY POINTS field, or PO override value]
   - Assignee:       Unassigned (default)
 
 DESCRIPTION FORMAT IN JIRA:
