@@ -142,6 +142,23 @@ As a [Persona], I want [Capability], so that [Business Value].
 2. Core happy-path flows
 3. Error, edge, and non-functional stories
 
+### Story point estimation (required for every story)
+
+Estimate using four factors — scale: **1 / 2 / 3 / 5 / 8** (min 1, max 8):
+
+| Factor | Low | Medium | High |
+|--------|-----|--------|------|
+| Dev effort | < 0.5 day | 0.5–2 days | 2–5 days |
+| Complexity | 1 layer (UI or API) | 2 layers (UI+API or API+DB) | 3+ layers or external integrations |
+| Risk/uncertainty | Well-understood, has precedent | Some unknowns | Novel approach, TBD dependencies |
+| AC count | 1–2 ACs | 3–4 ACs | 5+ ACs |
+
+**Fibonacci mapping:**
+- All Low → 1 | Mostly Low, one Medium → 2 | Mix Low/Medium → 3
+- At least one High, rest Medium → 5 | Multiple Highs → 8 (flag for splitting)
+
+**Always include a rationale line:** `3 — medium complexity (UI + REST API), 3 ACs, low risk`
+
 ---
 
 ## Step 5 — User Story Output Template
@@ -198,6 +215,12 @@ AC-3: [Boundary Condition / Empty State]
   Given [precondition]
   When  [action]
   Then  [expected outcome]
+
+─────────────────────────────────
+STORY POINTS:
+─────────────────────────────────
+[Points] — [One-line rationale citing dev effort, complexity, risk, AC count]
+Example: "3 — medium complexity (UI + REST API), 3 ACs, low risk"
 
 ─────────────────────────────────
 DEFINITION OF DONE:
@@ -304,7 +327,7 @@ After presenting stories, offer these options for each story:
 1. User Story statement
 2. Acceptance Criteria
 3. Definition of Done
-4. Priority or Estimate
+4. Story Points (current estimate can be overridden)
 5. Persona
 6. Something else — describe it
 
@@ -322,6 +345,7 @@ For each approved story, create a Jira issue with:
 - **Parent:** Original EPIC key
 - **Sprint:** [PO selection]
 - **Labels:** `AI-Generated`, `Needs-PO-Review`, `Ready-for-Dev` (if DoR passed)
+- **Story Points:** [Number from STORY POINTS field, or PO override value]
 - **Assignee:** Unassigned
 
 **Jira description format:**

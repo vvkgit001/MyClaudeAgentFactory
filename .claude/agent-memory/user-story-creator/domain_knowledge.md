@@ -115,15 +115,23 @@ Constraints that shape story Technical Notes. Do NOT include implementation pres
 
 ## Story Sizing Reference
 
-Calibration guide for the 1/2/3/5/8 Fibonacci scale used in SCRUM project.
+Scale: **1 / 2 / 3 / 5 / 8** (Fibonacci) — Min 1, Max 8. If a story exceeds 8, flag it for splitting.
 
-| Points | Meaning | Example story type |
-|--------|---------|-------------------|
-| 1 | Trivial — config change, label update | Change button label, update tooltip text |
-| 2 | Small — single UI component or simple API call | Add a read-only field to a form |
-| 3 | Medium — new feature with straightforward AC | User can filter a list by status |
-| 5 | Large — multi-component feature or non-trivial logic | User can configure notification preferences |
-| 8 | Very large — consider splitting | Full new screen with complex state and integrations |
+Estimate each story across four factors, then map to Fibonacci:
+
+| Points | Dev Effort | Complexity | Risk / Uncertainty | Typical AC Count | Example |
+|--------|-----------|-----------|-------------------|-----------------|---------|
+| 1 | < 0.5 day | UI-only or config change | None — well understood | 1–2 | Change button label, update tooltip text |
+| 2 | ~0.5–1 day | Single UI component or simple API | Low — clear precedent | 1–2 | Add a read-only field to a form |
+| 3 | 1–2 days | UI + API, or API + DB | Low–Medium — mostly known | 3–4 | User can filter a list by status |
+| 5 | 2–4 days | Multi-component, non-trivial logic | Medium — some unknowns | 3–5 | User can configure notification preferences |
+| 8 | 4–5 days | Full screen + complex state + integrations | High — novel or many TBDs | 5+ | New screen with auth + state + external APIs |
+
+**Factor → Fibonacci mapping:**
+- All Low → 1 | Mostly Low, one Medium → 2 | Mix Low/Medium → 3
+- At least one High, rest Medium → 5 | Multiple Highs → 8 (flag for split)
+
+**Always show rationale inline:** `3 — medium complexity (UI + REST API), 3 ACs, low risk`
 
 ---
 
