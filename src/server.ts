@@ -48,18 +48,27 @@ const jobs = new Map<string, Job>();
 // ─── POST /api/generate ───────────────────────────────────────────────────────
 
 interface GenerateBody {
+  mode?: "epic" | "single";
   epicLink?: string;
+  storyBrief?: string;
+  epicParent?: string;
+  additionalNotes?: string;
   figmaUrl?: string;
   confluenceUrls?: string[];
-  jiraProject?: string;
   customInstructions?: string;
+  targetProject?: string;
 }
 
 app.post("/api/generate", (req: Request, res: Response) => {
   const body = req.body as GenerateBody;
+  const mode = body.mode ?? "epic";
 
-  if (!body.epicLink || !body.epicLink.trim()) {
-    res.status(400).json({ error: "epicLink is required" });
+  if (mode === "epic" && (!body.epicLink || !body.epicLink.trim())) {
+    res.status(400).json({ error: "epicLink is required for Epic Stories mode" });
+    return;
+  }
+  if (mode === "single" && (!body.storyBrief || !body.storyBrief.trim())) {
+    res.status(400).json({ error: "storyBrief is required for Single Story mode" });
     return;
   }
 
@@ -86,11 +95,15 @@ app.post("/api/generate", (req: Request, res: Response) => {
   // Write initial JSON as first line — keep stdin open for follow-up replies
   child.stdin.write(
     JSON.stringify({
-      epicLink: body.epicLink.trim(),
+      mode,
+      epicLink: body.epicLink?.trim() || undefined,
+      storyBrief: body.storyBrief?.trim() || undefined,
+      epicParent: body.epicParent?.trim() || undefined,
+      additionalNotes: body.additionalNotes?.trim() || undefined,
       figmaUrl: body.figmaUrl?.trim() || undefined,
       confluenceUrls: body.confluenceUrls?.filter((u) => u.trim()) ?? [],
-      jiraProject: body.jiraProject?.trim() || undefined,
       customInstructions: body.customInstructions?.trim() || undefined,
+      targetProject: body.targetProject?.trim() || undefined,
     }) + "\n"
   );
 
@@ -404,6 +417,119 @@ app.get("/api/atlassian/callback", async (req: Request, res: Response) => {
 </html>`);
   } catch (err) {
     res.status(500).send(`Token exchange failed: ${String(err)}`);
+  }
+});
+
+// ─── MCP HTTP helpers ─────────────────────────────────────────────────────────
+
+async function initMcpSession(token: string): Promise<string> {
+  const initRes = await fetch(ATLASSIAN_MCP_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "init",
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "po-copilot-server", version: "1.0" },
+      },
+    }),
+  });
+  const sessionId = initRes.headers.get("mcp-session-id");
+  if (!sessionId) throw new Error("MCP init failed: no session ID");
+  return sessionId;
+}
+
+async function mcpToolCall(
+  token: string,
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const res = await fetch(ATLASSIAN_MCP_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      "Mcp-Session-Id": sessionId,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: randomUUID(),
+      method: "tools/call",
+      params: { name: toolName, arguments: args },
+    }),
+  });
+
+  const text = await res.text();
+  const dataLine = text.split("\n").find((l) => l.startsWith("data: "));
+  if (!dataLine) throw new Error(`No SSE data from MCP tool ${toolName}`);
+
+  const parsed = JSON.parse(dataLine.slice(6)) as {
+    result?: { content?: Array<{ text?: string }>; isError?: boolean };
+    error?: { message: string };
+  };
+  if (parsed.error) throw new Error(parsed.error.message);
+  if (parsed.result?.isError) throw new Error(parsed.result.content?.[0]?.text ?? "MCP tool error");
+
+  const textContent = parsed.result?.content?.[0]?.text;
+  if (!textContent) return null;
+  return JSON.parse(textContent) as unknown;
+}
+
+// ─── GET /api/jira/projects ──────────────────────────────────────────────────
+
+interface JiraProject {
+  key: string;
+  name: string;
+}
+
+let projectsCache: { data: JiraProject[]; fetchedAt: number } | null = null;
+const PROJECTS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+app.get("/api/jira/projects", async (_req: Request, res: Response) => {
+  if (projectsCache && Date.now() - projectsCache.fetchedAt < PROJECTS_CACHE_TTL_MS) {
+    res.json({ projects: projectsCache.data });
+    return;
+  }
+
+  const creds = readCredentials();
+  const mcpOAuth = (creds.mcpOAuth ?? {}) as Record<string, { serverName: string; accessToken: string; expiresAt: number }>;
+  const entry = Object.values(mcpOAuth).find((v) => v.serverName === "atlassian");
+
+  if (!entry?.accessToken) {
+    res.status(401).json({ error: "Not authenticated with Atlassian" });
+    return;
+  }
+
+  try {
+    const sessionId = await initMcpSession(entry.accessToken);
+
+    const resources = await mcpToolCall(
+      entry.accessToken, sessionId, "getAccessibleAtlassianResources", {}
+    ) as Array<{ id: string }>;
+    if (!resources?.length) {
+      res.json({ projects: [] });
+      return;
+    }
+    const cloudId = resources[0].id;
+
+    const data = await mcpToolCall(
+      entry.accessToken, sessionId, "getVisibleJiraProjects", { cloudId }
+    ) as { values?: Array<{ key: string; name: string }> };
+    const projects: JiraProject[] = (data?.values ?? []).map((p) => ({ key: p.key, name: p.name }));
+
+    projectsCache = { data: projects, fetchedAt: Date.now() };
+    res.json({ projects });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 

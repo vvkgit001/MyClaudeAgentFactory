@@ -30,32 +30,61 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
 
 interface RunnerInput {
-  epicLink: string;
+  mode?: "epic" | "single";
+  epicLink?: string;
+  storyBrief?: string;
+  epicParent?: string;
+  additionalNotes?: string;
   figmaUrl?: string;
   confluenceUrls?: string[];
-  jiraProject?: string;
   customInstructions?: string;
+  targetProject?: string;
 }
 
 function buildTaskPrompt(input: RunnerInput): string {
+  const mode = input.mode ?? "epic";
+
+  if (mode === "single") {
+    const lines: string[] = [
+      "Please create a single standalone user story based on the following brief.",
+      "",
+      "MODE: SINGLE_STORY",
+      "",
+      `Story Brief: ${input.storyBrief ?? ""}`,
+    ];
+    if (input.targetProject) lines.push(`Target Jira Project: ${input.targetProject}`);
+    if (input.figmaUrl) lines.push(`Figma Design: ${input.figmaUrl}`);
+    if (input.confluenceUrls && input.confluenceUrls.length > 0) {
+      lines.push("Supporting Documentation:");
+      for (const url of input.confluenceUrls) lines.push(`  - ${url}`);
+    }
+    if (input.additionalNotes) {
+      lines.push("", "Additional Notes (raw requirements, meeting outputs, etc.):");
+      lines.push(input.additionalNotes);
+    }
+    lines.push(
+      "",
+      `Optional EPIC Parent: ${input.epicParent ? input.epicParent : "None — create as standalone story with no parent"}`
+    );
+    if (input.customInstructions) {
+      lines.push("", `Additional Instructions: ${input.customInstructions}`);
+    }
+    return lines.join("\n");
+  }
+
+  // Epic Stories mode (default)
   const lines: string[] = [
     "Please generate user stories for the following EPIC.",
     "",
-    `EPIC Link: ${input.epicLink}`,
+    "MODE: EPIC_STORIES",
+    "",
+    `EPIC Link: ${input.epicLink ?? ""}`,
   ];
-  if (input.figmaUrl) {
-    lines.push(`Figma Design: ${input.figmaUrl}`);
-  }
+  if (input.targetProject) lines.push(`Target Jira Project: ${input.targetProject}`);
+  if (input.figmaUrl) lines.push(`Figma Design: ${input.figmaUrl}`);
   if (input.confluenceUrls && input.confluenceUrls.length > 0) {
     lines.push("Supporting Documentation:");
-    for (const url of input.confluenceUrls) {
-      lines.push(`  - ${url}`);
-    }
-  }
-  if (input.jiraProject) {
-    lines.push(
-      `Target Jira Project: ${input.jiraProject} — use this project, skip the project selection step.`
-    );
+    for (const url of input.confluenceUrls) lines.push(`  - ${url}`);
   }
   if (input.customInstructions) {
     lines.push("", `Additional Instructions: ${input.customInstructions}`);
@@ -122,8 +151,13 @@ async function main() {
     process.exit(1);
   }
 
-  if (!input.epicLink) {
-    process.stderr.write("agentRunner: epicLink is required\n");
+  const mode = input.mode ?? "epic";
+  if (mode === "epic" && !input.epicLink) {
+    process.stderr.write("agentRunner: epicLink is required for Epic Stories mode\n");
+    process.exit(1);
+  }
+  if (mode === "single" && !input.storyBrief) {
+    process.stderr.write("agentRunner: storyBrief is required for Single Story mode\n");
     process.exit(1);
   }
 
