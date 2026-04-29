@@ -4,7 +4,10 @@ import OutputPanel from "./components/OutputPanel.tsx";
 
 type AtlassianStatus = "loading" | "ok" | "needs-auth";
 
+type Mode = "epic" | "single";
+
 export default function App() {
+  const [mode, setMode] = useState<Mode>("epic");
   const [jobId, setJobId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -86,7 +89,7 @@ export default function App() {
       <header style={header}>
         <div style={logoArea}>
           <span style={logoIcon}>◆</span>
-          <span style={logoText}>User Story Creator</span>
+          <span style={logoText}>PO Copilot</span>
         </div>
         <span style={tagline}>Powered by Claude · Jira · Figma</span>
       </header>
@@ -118,13 +121,31 @@ export default function App() {
       <main style={main}>
         {/* Left panel — form */}
         <section style={formPanel}>
-          <h2 style={sectionTitle}>Generate Stories</h2>
+          {/* Mode tabs */}
+          <div style={tabBar}>
+            <button
+              style={{ ...tabBtn, ...(mode === "epic" ? tabBtnActive : tabBtnInactive) }}
+              onClick={() => setMode("epic")}
+              disabled={isRunning}
+            >
+              📋 Epic Stories
+            </button>
+            <button
+              style={{ ...tabBtn, ...(mode === "single" ? tabBtnActive : tabBtnInactive) }}
+              onClick={() => setMode("single")}
+              disabled={isRunning}
+            >
+              ✏️ Single Story
+            </button>
+          </div>
+
           <p style={sectionSubtitle}>
-            Provide your EPIC link and any supporting context. The agent will analyse the
-            EPIC, cross-reference Figma designs and docs, and produce structured, ready-to-dev
-            user stories.
+            {mode === "epic"
+              ? "Provide your EPIC link and any supporting context. The agent will analyse the EPIC, cross-reference Figma designs and docs, and produce structured, ready-to-dev user stories."
+              : "Describe a single story in plain language. The agent will ask a few clarifying questions, then generate one complete, DoR-ready user story and push it to Jira."}
           </p>
-          <StoryForm onSubmit={handleSubmit} isRunning={isRunning} />
+
+          <StoryForm onSubmit={handleSubmit} isRunning={isRunning} mode={mode} />
           {submitError && <p style={errorMsg}>{submitError}</p>}
         </section>
 
@@ -231,6 +252,36 @@ const errorMsg: React.CSSProperties = {
   color: "#f87171",
   fontSize: 13,
   marginTop: 8,
+};
+
+const tabBar: React.CSSProperties = {
+  display: "flex",
+  gap: 4,
+  background: "#161b22",
+  borderRadius: 10,
+  padding: 4,
+  border: "1px solid #21262d",
+};
+
+const tabBtn: React.CSSProperties = {
+  flex: 1,
+  border: "none",
+  borderRadius: 7,
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 600,
+  padding: "8px 12px",
+  transition: "background 0.15s, color 0.15s",
+};
+
+const tabBtnActive: React.CSSProperties = {
+  background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+  color: "#fff",
+};
+
+const tabBtnInactive: React.CSSProperties = {
+  background: "transparent",
+  color: "#64748b",
 };
 
 const authBannerStyle: React.CSSProperties = {
