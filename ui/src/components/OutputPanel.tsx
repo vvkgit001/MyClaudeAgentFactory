@@ -31,6 +31,7 @@ export default function OutputPanel({ jobId, onDone, onRetry }: Props) {
   const [isSending, setIsSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const sendAbortRef = useRef<AbortController | null>(null);
 
   const authUrl = useMemo(() => detectAuthUrl(lines), [lines]);
   const needsAuth = authUrl !== null && !isAwaitingReply;
@@ -108,20 +109,32 @@ export default function OutputPanel({ jobId, onDone, onRetry }: Props) {
 
   const sendReply = async () => {
     if (!replyText.trim() || !jobId || isSending) return;
+    const controller = new AbortController();
+    sendAbortRef.current = controller;
     setIsSending(true);
     try {
       await fetch(`/api/jobs/${jobId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: replyText.trim() }),
+        signal: controller.signal,
       });
       setReplyText("");
       setIsAwaitingReply(false);
     } catch {
-      // ignore — server will surface errors via SSE
+      // ignore — server will surface errors via SSE; AbortError means user cancelled
     } finally {
+      sendAbortRef.current = null;
       setIsSending(false);
     }
+  };
+
+  const cancelReply = () => {
+    sendAbortRef.current?.abort();
+    sendAbortRef.current = null;
+    setIsSending(false);
+    setReplyText("");
+    setTimeout(() => replyRef.current?.focus(), 50);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -248,7 +261,12 @@ export default function OutputPanel({ jobId, onDone, onRetry }: Props) {
             rows={3}
             disabled={isSending}
           />
-          <div style={replyFooter}>
+          <div style={{ ...replyFooter, justifyContent: isSending ? "space-between" : "flex-end" }}>
+            {isSending && (
+              <button style={cancelBtn} onClick={cancelReply}>
+                Cancel
+              </button>
+            )}
             <button
               style={{
                 ...sendBtn,
@@ -529,4 +547,16 @@ const sendBtnDisabled: React.CSSProperties = {
   background: "#21262d",
   color: "#484f58",
   cursor: "not-allowed",
+};
+
+const cancelBtn: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid #f87171",
+  borderRadius: 7,
+  color: "#f87171",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 600,
+  padding: "8px 20px",
+  transition: "opacity 0.15s",
 };

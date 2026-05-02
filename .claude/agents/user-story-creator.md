@@ -329,7 +329,7 @@ STEP 2 — QUERY EXISTING JIRA STORIES:
   a) All stories linked to THIS EPIC (any status):
      → Identify what has already been defined or partially delivered
 
-  b) All Done/Closed stories in the SCRUM project from the last 3 sprints:
+  b) All Done/Closed stories in the SCRUM project from the last 30 sprints:
      → Build a picture of recently implemented capabilities
 
   For each story found, note:
